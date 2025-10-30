@@ -6,6 +6,23 @@ function App() {
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Deploy modal states
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState(null);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  
+  // Form states
+  const [deployForm, setDeployForm] = useState({
+    repository: '',
+    branch: 'main',
+    mainFilePath: '',
+    appUrl: '',
+    pythonVersion: '3.13',
+    secrets: ''
+  });
+  
+  const [formErrors, setFormErrors] = useState({});
 
   // Check if user is already logged in on component mount
   useEffect(() => {
@@ -142,6 +159,92 @@ function App() {
     setError('');
   };
 
+  // Open deploy modal
+  const handleDeployClick = (repo) => {
+    setSelectedRepo(repo);
+    setDeployForm({
+      repository: `${user.username}/${repo.name}`,
+      branch: repo.default_branch || 'main',
+      mainFilePath: '',
+      appUrl: '',
+      pythonVersion: '3.13',
+      secrets: ''
+    });
+    setFormErrors({});
+    setShowAdvancedSettings(false);
+    setShowDeployModal(true);
+  };
+
+  // Close deploy modal
+  const closeDeployModal = () => {
+    setShowDeployModal(false);
+    setSelectedRepo(null);
+    setShowAdvancedSettings(false);
+  };
+
+  // Handle form input changes
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setDeployForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    // Clear error for this field
+    if (formErrors[name]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  // Validate form
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!deployForm.repository.trim()) {
+      errors.repository = 'This field is required';
+    }
+    
+    if (!deployForm.branch.trim()) {
+      errors.branch = 'This field is required';
+    }
+    
+    if (!deployForm.mainFilePath.trim()) {
+      errors.mainFilePath = 'This field is required';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Handle deploy submission
+  const handleDeploySubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // TODO: Send deployment request to backend
+      console.log('Deploying with config:', deployForm);
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      alert('Deployment initiated successfully!');
+      closeDeployModal();
+      
+    } catch (err) {
+      setError('Failed to deploy application');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -164,7 +267,7 @@ function App() {
           {error && <div className="error">{error}</div>}
           <button onClick={handleGithubSignIn} className="github-button">
             <svg height="24" width="24" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
             </svg>
             Sign in with GitHub
           </button>
@@ -227,11 +330,151 @@ function App() {
                     Updated: {new Date(repo.updated_at).toLocaleDateString()}
                   </span>
                 </div>
+                <button 
+                  className="deploy-button"
+                  onClick={() => handleDeployClick(repo)}
+                >
+                  Deploy
+                </button>
               </div>
             ))}
           </div>
         )}
       </main>
+
+      {/* Deploy Modal */}
+      {showDeployModal && (
+        <div className="modal-overlay" onClick={closeDeployModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Deploy an app</h2>
+              <button className="close-button" onClick={closeDeployModal}>×</button>
+            </div>
+            
+            <form onSubmit={handleDeploySubmit}>
+              <div className="form-group">
+                <label>
+                  Repository
+                  <a href="#" className="paste-link">Paste GitHub URL</a>
+                </label>
+                <input
+                  type="text"
+                  name="repository"
+                  value={deployForm.repository}
+                  onChange={handleFormChange}
+                  className={formErrors.repository ? 'error-input' : ''}
+                  placeholder="username/repo"
+                />
+                {formErrors.repository && (
+                  <span className="error-text">{formErrors.repository}</span>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>Branch</label>
+                <input
+                  type="text"
+                  name="branch"
+                  value={deployForm.branch}
+                  onChange={handleFormChange}
+                  className={formErrors.branch ? 'error-input' : ''}
+                  placeholder="main"
+                />
+                {formErrors.branch && (
+                  <span className="error-text">{formErrors.branch}</span>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>Main file path</label>
+                <input
+                  type="text"
+                  name="mainFilePath"
+                  value={deployForm.mainFilePath}
+                  onChange={handleFormChange}
+                  className={formErrors.mainFilePath ? 'error-input' : ''}
+                  placeholder="foo/bar/deploy-nexus_app.py"
+                />
+                {formErrors.mainFilePath && (
+                  <span className="error-text">{formErrors.mainFilePath}</span>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>App URL (optional)</label>
+                <div className="url-input-wrapper">
+                  <input
+                    type="text"
+                    name="appUrl"
+                    value={deployForm.appUrl}
+                    onChange={handleFormChange}
+                    placeholder=""
+                    className="url-input"
+                  />
+                  <span className="url-suffix">.deploy-nexus.app</span>
+                </div>
+              </div>
+
+              <div className="advanced-settings-section">
+                <button
+                  type="button"
+                  className="advanced-settings-toggle"
+                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                >
+                  Advanced settings
+                  <span className={`chevron ${showAdvancedSettings ? 'open' : ''}`}>›</span>
+                </button>
+
+                {showAdvancedSettings && (
+                  <div className="advanced-settings-content">
+                    <div className="form-group">
+                      <label>Python version</label>
+                      <select
+                        name="pythonVersion"
+                        value={deployForm.pythonVersion}
+                        onChange={handleFormChange}
+                        className="python-version-select"
+                      >
+                        <option value="3.13">3.13</option>
+                        <option value="3.12">3.12</option>
+                        <option value="3.11">3.11</option>
+                        <option value="3.10">3.10</option>
+                        <option value="3.9">3.9</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>
+                        Secrets
+                        <span className="help-text">
+                          Provide environment variables and other secrets to your app using TOML format. 
+                          This information is encrypted and served securely to your app at runtime.
+                        </span>
+                      </label>
+                      <textarea
+                        name="secrets"
+                        value={deployForm.secrets}
+                        onChange={handleFormChange}
+                        placeholder={`DB_USERNAME = "myuser"\nDB_TOKEN = "abcdef"\n\n[some_section]\nsome_key = 1234`}
+                        rows="8"
+                        className="secrets-textarea"
+                      />
+                    </div>
+
+                    <button type="button" className="save-secrets-button">
+                      Save
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button type="submit" className="deploy-submit-button">
+                Deploy
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

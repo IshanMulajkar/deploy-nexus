@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - GitHub OAuth</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Your Repositories</h1>
+        <div class="user-info">
+          <span id="username"></span>
+          <button onclick="logout()" class="btn-logout">Logout</button>
+        </div>
+      </div>
+      <div id="repos" class="repos-grid"></div>
+    </div>
+
+    <!-- Deploy Modal -->
+    <div id="deployModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Deploy an app</h2>
+          <span class="close">&times;</span>
+        </div>
+        <form id="deployForm">
+          <div class="form-group">
+            <label for="repository">
+              Repository <span class="required">*</span>
+            </label>
+            <div class="input-hint">Paste GitHub URL</div>
+            <input type="text" id="repository" name="repository" readonly />
+            <span class="error-message" id="repoError"
+              >This field is required</span
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="branch"> Branch <span class="required">*</span> </label>
+            <input
+              type="text"
+              id="branch"
+              name="branch"
+              value="main"
+              required
+            />
+            <span class="error-message" id="branchError"
+              >This field is required</span
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="mainFilePath">
+              Main file path <span class="required">*</span>
+            </label>
+            <input
+              type="text"
+              id="mainFilePath"
+              name="mainFilePath"
+              placeholder="foo/bar/streamlit_app.py"
+              required
+            />
+            <span class="error-message" id="filePathError"
+              >This field is required</span
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="appUrl">App URL (optional)</label>
+            <div class="url-input-wrapper">
+              <input type="text" id="appUrl" name="appUrl" placeholder="" />
+              <span class="url-suffix">.streamlit.app</span>
+            </div>
+          </div>
+
+          <button type="button" class="btn-link" id="advancedSettingsBtn">
+            Advanced settings
+          </button>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-deploy">Deploy</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Advanced Settings Modal -->
+    <div id="advancedModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Advanced settings</h2>
+          <span class="close-advanced">&times;</span>
+        </div>
+        <form id="advancedForm">
+          <div class="form-group">
+            <label for="pythonVersion">Python version</label>
+            <select id="pythonVersion" name="pythonVersion">
+              <option value="3.13">3.13</option>
+              <option value="3.12">3.12</option>
+              <option value="3.11">3.11</option>
+              <option value="3.10">3.10</option>
+              <option value="3.9">3.9</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="secrets">Secrets</label>
+            <div class="help-text">
+              Provide environment variables and other secrets to your app using
+              TOML format. This information is encrypted and served securely to
+              your app at runtime.
+              <a href="#" class="learn-more"
+                >Learn more about Secrets in our docs.</a
+              >
+            </div>
+            <textarea
+              id="secrets"
+              name="secrets"
+              rows="8"
+              placeholder='DB_USERNAME = "myuser"
+DB_TOKEN = "abcdef"
+
+[some_section]
+some_key = 1234'
+            ></textarea>
+            <div class="secrets-hint">
+              Changes take around a minute to propagate.
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-save">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
