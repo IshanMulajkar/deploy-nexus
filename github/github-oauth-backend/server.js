@@ -53,6 +53,10 @@ const userSchema = new mongoose.Schema({
   githubProfile: {
     type: Object
   },
+  token: {
+    type: Number,
+    default: 3  // Default deployment tokens
+  },
   createdAt: { 
     type: Date, 
     default: Date.now 
@@ -60,6 +64,55 @@ const userSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
+
+// Deployment Schema & Model
+const deploymentSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  repoUrl: {
+    type: String,
+    required: true
+  },
+  repoName: {
+    type: String,
+    required: true
+  },
+  deployUrl: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  status: {
+    type: String,
+    enum: ['deploying', 'live', 'failed', 'stopped'],
+    default: 'deploying'
+  },
+  framework: {
+    type: String
+  },
+  buildCommand: {
+    type: String
+  },
+  outputDirectory: {
+    type: String
+  },
+  environmentVariables: {
+    type: Map,
+    of: String
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  deployedAt: {
+    type: Date
+  }
+});
+
+const Deployment = mongoose.model('Deployment', deploymentSchema);
 
 // GitHub OAuth Configuration
 const GITHUB_CLIENT_ID = 'Ov23lisFSFQTH0D7WEHm';
@@ -136,7 +189,8 @@ app.post('/api/auth/github/callback', async (req, res) => {
         githubAccessToken: accessToken,
         avatarUrl: githubUser.avatar_url,
         githubProfile: githubUser,
-        role: 'developer'
+        role: 'developer',
+        token: 3  // Give 3 free deployment tokens
       });
       await user.save();
     } else {
@@ -163,7 +217,8 @@ app.post('/api/auth/github/callback', async (req, res) => {
         email: user.email,
         role: user.role,
         avatarUrl: user.avatarUrl,
-        githubProfile: user.githubProfile
+        githubProfile: user.githubProfile,
+        token: user.token
       }
     });
   } catch (error) {
@@ -230,7 +285,8 @@ app.post('/api/auth/signup', async (req, res) => {
       email,
       username,
       password: hashedPassword,
-      role
+      role,
+      token: 3  // Give 3 free deployment tokens
     });
 
     await newUser.save();
@@ -248,7 +304,8 @@ app.post('/api/auth/signup', async (req, res) => {
         id: newUser._id,
         username: newUser.username,
         email: newUser.email,
-        role: newUser.role
+        role: newUser.role,
+        token: newUser.token
       }
     });
   } catch (error) {
@@ -284,7 +341,8 @@ app.post('/api/auth/login', async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        token: user.token
       }
     });
   } catch (error) {
@@ -303,6 +361,215 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Profile error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============ DEPLOYMENT ROUTES ============
+
+// Get user token info
+app.get('/api/tokens/info', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('token');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    return res.json({
+      tokens: user.token || 0,
+      maxTokens: 3
+    });
+  } catch (error) {
+    console.error('Error fetching token info:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Create new deployment
+app.post('/api/deploy', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      repoUrl, 
+      framework, 
+      buildCommand, 
+      outputDirectory, 
+      environmentVariables,
+      customUrl
+    } = req.body;
+    
+    // Validate required fields
+    if (!repoUrl) {
+      return res.status(400).json({ message: 'Repository URL is required' });
+    }
+    
+    // Check user tokens
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    if (user.token <= 0) {
+      return res.status(400).json({ message: 'No deployment tokens available' });
+    }
+    
+    // Extract repo name from URL
+    const repoName = repoUrl.split('/').pop().replace('.git', '');
+    
+    // Generate deployment URL (use custom or random)
+    let deployUrl;
+    if (customUrl) {
+      deployUrl = customUrl;
+    } else {
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      deployUrl = `https://${randomStr}.deploynexus.app`;
+    }
+    
+    // Create new deployment record with all information
+    const deployment = new Deployment({
+      user: req.user.userId,
+      repoUrl,
+      repoName,
+      deployUrl,
+      framework: framework || 'static',
+      buildCommand: buildCommand || '',
+      outputDirectory: outputDirectory || 'dist',
+      environmentVariables: environmentVariables || {},
+      status: 'deploying',
+      createdAt: new Date()
+    });
+    
+    // Save deployment to MongoDB
+    await deployment.save();
+    
+    // Decrement user tokens
+    user.token -= 1;
+    await user.save();
+    
+    // Simulate deployment process (3 seconds)
+    setTimeout(async () => {
+      try {
+        deployment.status = 'live';
+        deployment.deployedAt = new Date();
+        await deployment.save();
+        console.log(`✅ Deployment ${deployment._id} is now live at ${deployUrl}`);
+      } catch (err) {
+        console.error('Error updating deployment status:', err);
+      }
+    }, 3000);
+    
+    return res.json({
+      success: true,
+      message: 'Deployment started successfully',
+      deployUrl,
+      remainingTokens: user.token,
+      deployment: {
+        id: deployment._id,
+        repoUrl: deployment.repoUrl,
+        repoName: deployment.repoName,
+        deployUrl: deployment.deployUrl,
+        framework: deployment.framework,
+        buildCommand: deployment.buildCommand,
+        outputDirectory: deployment.outputDirectory,
+        status: deployment.status,
+        createdAt: deployment.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error deploying project:', error);
+    return res.status(500).json({ 
+      message: 'Deployment failed. Please try again.',
+      error: error.message 
+    });
+  }
+});
+
+// Get all user deployments
+app.get('/api/deployments', authenticateToken, async (req, res) => {
+  try {
+    const deployments = await Deployment.find({ user: req.user.userId })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    
+    return res.json({ 
+      success: true,
+      deployments 
+    });
+  } catch (error) {
+    console.error('Error fetching deployments:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get single deployment by ID
+app.get('/api/deployments/:id', authenticateToken, async (req, res) => {
+  try {
+    const deployment = await Deployment.findOne({
+      _id: req.params.id,
+      user: req.user.userId
+    });
+    
+    if (!deployment) {
+      return res.status(404).json({ message: 'Deployment not found' });
+    }
+    
+    return res.json({ 
+      success: true,
+      deployment 
+    });
+  } catch (error) {
+    console.error('Error fetching deployment:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete deployment
+app.delete('/api/deployments/:id', authenticateToken, async (req, res) => {
+  try {
+    const deployment = await Deployment.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user.userId
+    });
+    
+    if (!deployment) {
+      return res.status(404).json({ message: 'Deployment not found' });
+    }
+    
+    return res.json({ 
+      success: true,
+      message: 'Deployment deleted successfully' 
+    });
+  } catch (error) {
+    console.error('Error deleting deployment:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add tokens to user account (admin or payment feature)
+app.post('/api/tokens/add', authenticateToken, async (req, res) => {
+  try {
+    const { count } = req.body;
+    
+    if (!count || count <= 0) {
+      return res.status(400).json({ message: 'Invalid token count' });
+    }
+    
+    const user = await User.findById(req.user.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    user.token = (user.token || 0) + count;
+    await user.save();
+    
+    return res.json({
+      success: true,
+      tokens: user.token,
+      message: `${count} tokens added successfully`
+    });
+  } catch (error) {
+    console.error('Error adding tokens:', error);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
