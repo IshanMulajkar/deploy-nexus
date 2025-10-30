@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// DashboardPage.tsx
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Rocket, Menu, X, Server, FileText, Settings, BarChart } from 'lucide-react';
@@ -6,14 +7,61 @@ import { useAuth } from '../context/AuthContext';
 import { useTokens } from '../context/TokenContext';
 import Button from '../components/ui/Button';
 import Particles from '../components/ui/Particles';
+import axios from 'axios';
+import api from '../../utils/authInterceptor';
+// here stopping at the error where failed to fetch the deployment and tokemn info because of unauthorized or something
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const DashboardPage = () => {
-  const { user } = useAuth();
-  const { tokens, maxTokens, decrementToken } = useTokens();
+  const { user, token } = useAuth();
+  const { tokens, maxTokens, decrementToken, fetchTokens } = useTokens();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [repoUrl, setRepoUrl] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployedUrl, setDeployedUrl] = useState('');
+  const [deployments, setDeployments] = useState([]);
+  const [deploymentError, setDeploymentError] = useState('');
+  
+  
+  // Setup axios instance with auth header
+  const authAxios = axios.create({
+    baseURL: API_URL,
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  // Update auth header when token changes
+  useEffect(() => {
+    if (token) {
+      authAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete authAxios.defaults.headers.common['Authorization'];
+    }
+  }, [token]);
+  
+  // Fetch deployments when component mounts
+  useEffect(() => {
+    if (token) {
+      fetchDeployments();
+    }
+  }, [token]);
+
+  const fetchDeployments = async () => {
+    if (!token) return;
+    
+    try {
+      const response = await authAxios.get('/deployments', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      setDeployments(response.data.deployments || []);
+    } catch (error) {
+      console.error('Error fetching deployments:', error);
+    }
+  };
   
   const getTimeOfDay = () => {
     const hour = new Date().getHours();
@@ -23,22 +71,35 @@ const DashboardPage = () => {
   };
   
   const handleDeploy = async () => {
-    if (!repoUrl || tokens <= 0) return;
+    if (!repoUrl || tokens <= 0 || !token) return;
     
     setIsDeploying(true);
+    setDeploymentError('');
     
     try {
-      // Simulate deployment process
-      await new Promise(resolve => setTimeout(resolve, 9000));
+      // Real API call to create deployment
+      const deployResponse = await authAxios.post('/deploy', 
+        { repoUrl },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
       
-      // Generate a random subdomain
-      const randomStr = Math.random().toString(36).substring(2, 8);
-      const liveUrl = `https://${randomStr}.deploynexus.app`;
+      // Update the UI with the new deployment
+      setDeployedUrl(deployResponse.data.deployUrl);
       
-      setDeployedUrl(liveUrl);
-      decrementToken();
+      // Decrement token and refresh token count
+      await decrementToken();
+      
+      // Refresh deployments list
+      fetchDeployments();
+      
     } catch (error) {
       console.error('Deployment error:', error);
+      const errorMessage = error.response?.data?.message || 'Deployment failed. Please try again.';
+      setDeploymentError(errorMessage);
     } finally {
       setIsDeploying(false);
     }
@@ -46,6 +107,15 @@ const DashboardPage = () => {
   
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
+  };
+  
+  // Format date for deployments
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+      Math.round((date - new Date()) / (1000 * 60)), 
+      'minute'
+    );
   };
   
   return (
@@ -175,7 +245,7 @@ const DashboardPage = () => {
               Good {getTimeOfDay()}, {user?.username || 'User'}!
             </h1>
             <p className="text-gray-300 mt-1">
-              You have {tokens} deployment tokens remaining. Deploy your projects instantly.
+              You have <span className="text-blue-400 font-medium">{tokens}</span> deployment tokens remaining. Deploy your projects instantly.
             </p>
           </motion.div>
           
@@ -223,7 +293,18 @@ const DashboardPage = () => {
                 </Button>
               </div>
               
-              {deployedUrl && (
+              {deploymentError && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  className="mt-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20"
+                >
+                  <p className="text-red-400 font-medium">Deployment failed ❌</p>
+                  <p className="text-gray-300 mt-1">{deploymentError}</p>
+                </motion.div>
+              )}
+              
+              {deployedUrl && !deploymentError && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -233,13 +314,16 @@ const DashboardPage = () => {
                   <p className="text-gray-300 mt-1">
                     Your site is live at:{" "}
                     <a
-                      href="#"
+                      href={deployedUrl}
                       className="text-blue-400 hover:underline break-all"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
                       {deployedUrl}
                     </a>
+                  </p>
+                  <p className="text-gray-400 mt-2 text-sm">
+                    You now have <span className="text-blue-400 font-medium">{tokens}</span> tokens remaining.
                   </p>
                 </motion.div>
               )}
@@ -254,27 +338,31 @@ const DashboardPage = () => {
           >
             <h2 className="text-xl font-semibold text-white mb-4">Recent Deployments</h2>
             
-            {deployedUrl ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-gray-700/60 border border-gray-600">
-                  <div>
-                    <p className="text-white font-medium">{repoUrl.split('/').pop()}</p>
-                    <p className="text-gray-400 text-sm">Deployed 1 minute ago</p>
+            {deployments && deployments.length > 0 ? (
+              <div className="space-y-3">
+                {deployments.map((deployment) => (
+                  <div key={deployment._id} className="flex items-center justify-between p-3 rounded-lg bg-gray-700/60 border border-gray-600">
+                    <div>
+                      <p className="text-white font-medium">{deployment.repoName}</p>
+                      <p className="text-gray-400 text-sm">
+                        Deployed {new Date(deployment.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
+                        {deployment.status}
+                      </span>
+                      <a
+                        href={deployment.deployUrl}
+                        className="text-blue-400 hover:text-blue-300"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View
+                      </a>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
-                      Live
-                    </span>
-                    <a
-                      href="#"
-                      className="text-blue-400 hover:text-blue-300"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View
-                    </a>
-                  </div>
-                </div>
+                ))}
               </div>
             ) : (
               <p className="text-gray-400 text-center py-6">No deployments yet. Deploy your first project above!</p>
