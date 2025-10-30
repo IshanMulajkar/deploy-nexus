@@ -1,3 +1,8 @@
+/**
+ * Deployment model saved explicitly to the "deployment" collection.
+ * This model includes the fields you requested (repoName, deployUrl, status, createdAt)
+ * plus logs (array) and other deployment metadata.
+ */
 const mongoose = require('mongoose');
 
 const deploymentSchema = new mongoose.Schema({
@@ -24,6 +29,10 @@ const deploymentSchema = new mongoose.Schema({
     enum: ['deploying', 'live', 'failed', 'stopped'],
     default: 'deploying'
   },
+  logs: {
+    type: [String],
+    default: []
+  },
   framework: {
     type: String
   },
@@ -44,6 +53,8 @@ const deploymentSchema = new mongoose.Schema({
   deployedAt: {
     type: Date
   }
+}, {
+  collection: 'deployment' // force collection name to "deployment"
 });
 
 module.exports = mongoose.model('Deployment', deploymentSchema);

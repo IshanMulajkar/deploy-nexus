@@ -219,32 +219,59 @@ function App() {
   };
 
   // Handle deploy submission
-  const handleDeploySubmit = async (e) => {
-    e.preventDefault();
+  // Handle deploy submission
+const handleDeploySubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    return;
+  }
+
+  try {
+    setLoading(true);
     
-    if (!validateForm()) {
+    console.log('Deploying with config:', deployForm);
+    
+    // Get the auth token
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+      setError('You must be logged in to deploy');
       return;
     }
-
-    try {
-      setLoading(true);
-      
-      // TODO: Send deployment request to backend
-      console.log('Deploying with config:', deployForm);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      alert('Deployment initiated successfully!');
+    
+    // Send deployment request to backend
+    const response = await fetch('http://localhost:5000/api/deploy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(deployForm)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      alert(`✅ Deployment initiated successfully!\n\nDeploy URL: ${data.deployUrl}\n\nRemaining Tokens: ${data.remainingTokens}`);
+      console.log('Deployment response:', data);
       closeDeployModal();
       
-    } catch (err) {
-      setError('Failed to deploy application');
-    } finally {
-      setLoading(false);
+      // Optionally refresh deployments list if you have one
+      // fetchDeployments();
+    } else {
+      setError(data.message || 'Failed to deploy application');
+      alert(`❌ Deployment failed: ${data.message}`);
     }
-  };
-
+    
+  } catch (err) {
+    console.error('Deployment error:', err);
+    setError('Failed to deploy application: ' + err.message);
+    alert(`❌ Deployment error: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
   // Loading state
   if (loading) {
     return (

@@ -65,7 +65,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// Deployment Schema & Model
+// Updated Deployment Schema with logs field
 const deploymentSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -99,9 +99,23 @@ const deploymentSchema = new mongoose.Schema({
   outputDirectory: {
     type: String
   },
+  branch: {
+    type: String,
+    default: 'main'
+  },
+  mainFilePath: {
+    type: String
+  },
+  pythonVersion: {
+    type: String
+  },
   environmentVariables: {
     type: Map,
     of: String
+  },
+  logs: {
+    type: Array,
+    default: []  // Add logs field as an empty array
   },
   createdAt: {
     type: Date,
@@ -390,16 +404,26 @@ app.post('/api/deploy', authenticateToken, async (req, res) => {
   try {
     const { 
       repoUrl, 
+      repository,
+      branch,
+      mainFilePath,
+      appUrl,
+      pythonVersion,
       framework, 
       buildCommand, 
       outputDirectory, 
       environmentVariables,
+      secrets,
       customUrl
     } = req.body;
     
-    // Validate required fields
-    if (!repoUrl) {
-      return res.status(400).json({ message: 'Repository URL is required' });
+    console.log('Received deployment request:', req.body);
+    
+    // Validate required fields - support both formats
+    const finalRepoUrl = repoUrl || (repository ? `https://github.com/${repository}.git` : null);
+    
+    if (!finalRepoUrl) {
+      return res.status(400).json({ message: 'Repository URL or repository name is required' });
     }
     
     // Check user tokens
@@ -412,44 +436,79 @@ app.post('/api/deploy', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'No deployment tokens available' });
     }
     
-    // Extract repo name from URL
-    const repoName = repoUrl.split('/').pop().replace('.git', '');
+    // Extract repo name from URL or use repository field
+    let repoName;
+    if (repository) {
+      repoName = repository.split('/').pop();
+    } else {
+      repoName = finalRepoUrl.split('/').pop().replace('.git', '');
+    }
     
-    // Generate deployment URL (use custom or random)
+    // Generate deployment URL (use custom or appUrl or random)
     let deployUrl;
     if (customUrl) {
       deployUrl = customUrl;
+    } else if (appUrl) {
+      deployUrl = `https://${appUrl}.deploynexus.app`;
     } else {
       const randomStr = Math.random().toString(36).substring(2, 8);
       deployUrl = `https://${randomStr}.deploynexus.app`;
     }
     
+    // Parse environment variables/secrets
+    let envVars = {};
+    if (secrets) {
+      try {
+        envVars = typeof secrets === 'string' ? JSON.parse(secrets) : secrets;
+      } catch (err) {
+        console.log('Failed to parse secrets, using as-is');
+        envVars = { secrets: secrets };
+      }
+    } else if (environmentVariables) {
+      envVars = environmentVariables;
+    }
+    
     // Create new deployment record with all information
     const deployment = new Deployment({
       user: req.user.userId,
-      repoUrl,
+      repoUrl: finalRepoUrl,
       repoName,
       deployUrl,
-      framework: framework || 'static',
+      branch: branch || 'main',
+      mainFilePath: mainFilePath || '',
+      pythonVersion: pythonVersion || '3.13',
+      framework: framework || pythonVersion ? 'python' : 'static',
       buildCommand: buildCommand || '',
       outputDirectory: outputDirectory || 'dist',
-      environmentVariables: environmentVariables || {},
+      environmentVariables: envVars,
+      logs: [],
       status: 'deploying',
       createdAt: new Date()
     });
     
+    console.log('Creating deployment:', deployment);
+    
     // Save deployment to MongoDB
     await deployment.save();
+    
+    console.log('✅ Deployment saved to database:', deployment._id);
     
     // Decrement user tokens
     user.token -= 1;
     await user.save();
+    
+    console.log(`User tokens decremented. Remaining: ${user.token}`);
     
     // Simulate deployment process (3 seconds)
     setTimeout(async () => {
       try {
         deployment.status = 'live';
         deployment.deployedAt = new Date();
+        deployment.logs.push({
+          timestamp: new Date(),
+          message: 'Deployment completed successfully',
+          level: 'info'
+        });
         await deployment.save();
         console.log(`✅ Deployment ${deployment._id} is now live at ${deployUrl}`);
       } catch (err) {
@@ -467,11 +526,15 @@ app.post('/api/deploy', authenticateToken, async (req, res) => {
         repoUrl: deployment.repoUrl,
         repoName: deployment.repoName,
         deployUrl: deployment.deployUrl,
+        branch: deployment.branch,
+        mainFilePath: deployment.mainFilePath,
+        pythonVersion: deployment.pythonVersion,
         framework: deployment.framework,
         buildCommand: deployment.buildCommand,
         outputDirectory: deployment.outputDirectory,
         status: deployment.status,
-        createdAt: deployment.createdAt
+        createdAt: deployment.createdAt,
+        logs: deployment.logs
       }
     });
   } catch (error) {
